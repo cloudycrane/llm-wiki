@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
@@ -86,7 +85,6 @@ func watchFsnotify(projectDir string, watcher *fsnotify.Watcher, debounceSeconds
 	debounce := time.Duration(debounceSeconds) * time.Second
 	var timer *time.Timer
 	var compileMu sync.Mutex
-	var compiling atomic.Bool
 	var lastTrigger string
 
 	for {
@@ -115,7 +113,7 @@ func watchFsnotify(projectDir string, watcher *fsnotify.Watcher, debounceSeconds
 			}
 			trigger := lastTrigger
 			timer = time.AfterFunc(debounce, func() {
-				triggerCompile(projectDir, trigger, &compileMu, &compiling)
+				triggerCompile(projectDir, trigger, &compileMu)
 			})
 
 		case err, ok := <-watcher.Errors:
@@ -131,7 +129,6 @@ func watchFsnotify(projectDir string, watcher *fsnotify.Watcher, debounceSeconds
 // Works on WSL2 /mnt/ paths, network drives, and any filesystem.
 func watchPoll(projectDir string, sourcePaths []string, ignore []string, intervalSeconds int) error {
 	var compileMu sync.Mutex
-	var compiling atomic.Bool
 
 	// Build initial snapshot
 	snapshot := scanSnapshot(sourcePaths, ignore)
@@ -169,7 +166,7 @@ func watchPoll(projectDir string, sourcePaths []string, ignore []string, interva
 
 		if len(changed) > 0 {
 			log.Info("changes detected", "count", len(changed))
-			triggerCompile(projectDir, changed[0], &compileMu, &compiling)
+			triggerCompile(projectDir, changed[0], &compileMu)
 		}
 	}
 
@@ -227,15 +224,12 @@ func fullHash(path string) string {
 	return fmt.Sprintf("%x", h.Sum(nil))
 }
 
-func triggerCompile(projectDir string, trigger string, compileMu *sync.Mutex, compiling *atomic.Bool) {
-	if compiling.Load() {
+func triggerCompile(projectDir string, trigger string, compileMu *sync.Mutex) {
+	if !compileMu.TryLock() {
 		log.Info("compile already in progress, skipping", "trigger", trigger)
 		return
 	}
-	compileMu.Lock()
 	defer compileMu.Unlock()
-	compiling.Store(true)
-	defer compiling.Store(false)
 
 	log.Info("compiling after change", "trigger", trigger)
 	result, err := Compile(projectDir, CompileOpts{})

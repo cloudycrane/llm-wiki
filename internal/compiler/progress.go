@@ -80,20 +80,19 @@ func NewProgress() *Progress {
 
 // StartPhase begins tracking a new compilation phase.
 func (p *Progress) StartPhase(name string, total int) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	// Stop previous spinner if any
+	// Stop previous spinner BEFORE acquiring lock (spinner goroutine holds lock too)
 	if p.spinner != nil {
 		p.spinner.halt()
 		p.spinner = nil
 	}
 
+	p.mu.Lock()
 	p.phase = name
 	p.total = total
 	p.done = 0
 	p.errors = 0
 	p.current = ""
+	p.mu.Unlock()
 
 	if total > 0 {
 		fmt.Fprintf(os.Stderr, "\n⏳ %s (%d items)\n", name, total)

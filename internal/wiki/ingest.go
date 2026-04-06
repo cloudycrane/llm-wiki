@@ -1,12 +1,12 @@
 package wiki
 
 import (
+	"context"
 	"crypto/sha256"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -37,20 +37,13 @@ func IngestURL(projectDir string, url string) (*IngestResult, error) {
 		return nil, fmt.Errorf("ingest: only http/https URLs are supported")
 	}
 
-	// Block private/internal IPs (SSRF protection)
-	if !SkipSSRFCheck {
-		if err := validatePublicURL(url); err != nil {
-			return nil, err
-		}
-	}
-
 	cfg, err := config.Load(filepath.Join(projectDir, "config.yaml"))
 	if err != nil {
 		return nil, err
 	}
 
-	// Download with size limit
-	client := http.Client{Timeout: 30 * time.Second}
+	// Download with SSRF-safe client (validates IP at dial time, not before)
+	client := safeHTTPClient(SkipSSRFCheck)
 	resp, err := client.Get(url)
 	if err != nil {
 		return nil, fmt.Errorf("ingest: download failed: %w", err)
@@ -183,32 +176,48 @@ func findSourceFolder(projectDir string, cfg *config.Config, sourceType string) 
 	return ""
 }
 
-// validatePublicURL blocks requests to private/internal IP ranges.
-func validatePublicURL(rawURL string) error {
-	parsed, err := url.Parse(rawURL)
-	if err != nil {
-		return fmt.Errorf("ingest: invalid URL: %w", err)
+// safeHTTPClient creates an HTTP client that validates resolved IPs at dial time.
+// This prevents DNS rebinding attacks (TOCTOU) where DNS returns a public IP
+// for validation but a private IP for the actual connection.
+func safeHTTPClient(skipSSRF bool) http.Client {
+	if skipSSRF {
+		return http.Client{Timeout: 30 * time.Second}
 	}
 
-	host := parsed.Hostname()
+	dialer := &net.Dialer{Timeout: 10 * time.Second}
 
-	// Resolve hostname to IP
-	ips, err := net.LookupHost(host)
-	if err != nil {
-		return fmt.Errorf("ingest: DNS lookup failed for %s: %w", host, err)
+	transport := &http.Transport{
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			host, port, err := net.SplitHostPort(addr)
+			if err != nil {
+				return nil, err
+			}
+
+			// Resolve and validate IP before connecting
+			ips, err := net.LookupHost(host)
+			if err != nil {
+				return nil, fmt.Errorf("ingest: DNS lookup failed for %s: %w", host, err)
+			}
+
+			for _, ipStr := range ips {
+				ip := net.ParseIP(ipStr)
+				if ip == nil {
+					continue
+				}
+				if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+					return nil, fmt.Errorf("ingest: blocked connection to private address %s (%s)", host, ipStr)
+				}
+			}
+
+			// Connect to the validated address
+			return dialer.DialContext(ctx, network, net.JoinHostPort(ips[0], port))
+		},
 	}
 
-	for _, ipStr := range ips {
-		ip := net.ParseIP(ipStr)
-		if ip == nil {
-			continue
-		}
-		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
-			return fmt.Errorf("ingest: blocked request to private/internal address %s (%s)", host, ipStr)
-		}
+	return http.Client{
+		Timeout:   30 * time.Second,
+		Transport: transport,
 	}
-
-	return nil
 }
 
 func slugifyURL(rawURL string) string {
