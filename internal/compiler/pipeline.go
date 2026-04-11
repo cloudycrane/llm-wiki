@@ -87,6 +87,11 @@ func Compile(projectDir string, opts CompileOpts) (*CompileResult, error) {
 		log.Warn("failed to load custom prompts", "error", err)
 	}
 
+	// Configure output language if set
+	if cfg.Language != "" {
+		prompts.SetLanguage(cfg.Language)
+	}
+
 	// Load manifest
 	mfPath := filepath.Join(projectDir, ".manifest.json")
 	mf, err := manifest.Load(mfPath)

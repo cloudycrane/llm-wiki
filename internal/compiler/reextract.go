@@ -32,6 +32,11 @@ func ReExtract(projectDir string) (*CompileResult, error) {
 		log.Warn("failed to load custom prompts", "error", err)
 	}
 
+	// Configure output language if set
+	if cfg.Language != "" {
+		prompts.SetLanguage(cfg.Language)
+	}
+
 	mf, err := manifest.Load(filepath.Join(projectDir, ".manifest.json"))
 	if err != nil {
 		return nil, fmt.Errorf("re-extract: load manifest: %w", err)

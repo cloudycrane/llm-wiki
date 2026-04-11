@@ -15,6 +15,7 @@ var templateFS embed.FS
 
 var defaultTemplates *template.Template
 var activeTemplates *template.Template
+var outputLanguage string // configured via SetLanguage
 
 func init() {
 	var err error
@@ -87,14 +88,25 @@ func LoadFromDir(dir string) error {
 	return nil
 }
 
+// SetLanguage configures the output language for all prompts.
+// When set, a language instruction is appended to every rendered prompt.
+func SetLanguage(lang string) {
+	outputLanguage = lang
+}
+
 // Render renders a named template with the given data.
 // Uses user overrides if loaded, otherwise embedded defaults.
+// If a language is configured via SetLanguage, appends a language instruction.
 func Render(name string, data any) (string, error) {
 	var buf bytes.Buffer
 	if err := activeTemplates.ExecuteTemplate(&buf, name+".txt", data); err != nil {
 		return "", fmt.Errorf("prompts.Render(%s): %w", name, err)
 	}
-	return buf.String(), nil
+	result := buf.String()
+	if outputLanguage != "" {
+		result += fmt.Sprintf("\n\nIMPORTANT: Write your entire response in %s. Keep technical terms, code, and proper nouns in their original form.", outputLanguage)
+	}
+	return result, nil
 }
 
 // ScaffoldDefaults copies all embedded default templates to a directory
@@ -209,4 +221,5 @@ func Available() []string {
 // Reset restores embedded defaults (useful for testing).
 func Reset() {
 	activeTemplates = defaultTemplates
+	outputLanguage = ""
 }

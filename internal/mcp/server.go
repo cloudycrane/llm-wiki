@@ -16,6 +16,7 @@ import (
 	"github.com/xoai/sage-wiki/internal/manifest"
 	"github.com/xoai/sage-wiki/internal/memory"
 	"github.com/xoai/sage-wiki/internal/ontology"
+	"github.com/xoai/sage-wiki/internal/prompts"
 	"github.com/xoai/sage-wiki/internal/storage"
 	"github.com/xoai/sage-wiki/internal/vectors"
 	"github.com/xoai/sage-wiki/internal/wiki"
@@ -40,6 +41,11 @@ func NewServer(projectDir string) (*Server, error) {
 	cfg, err := config.Load(cfgPath)
 	if err != nil {
 		return nil, fmt.Errorf("mcp: load config: %w", err)
+	}
+
+	// Configure output language if set
+	if cfg.Language != "" {
+		prompts.SetLanguage(cfg.Language)
 	}
 
 	dbPath := filepath.Join(projectDir, ".sage", "wiki.db")
