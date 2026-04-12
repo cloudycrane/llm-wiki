@@ -1,9 +1,11 @@
 package extract
 
 import (
+	"context"
 	"fmt"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/ledongthuc/pdf"
 )
@@ -32,7 +34,9 @@ func extractPDFPoppler(path string) string {
 		return ""
 	}
 
-	out, err := exec.Command(pdftotext, path, "-").Output()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, pdftotext, path, "-").Output()
 	if err != nil {
 		return ""
 	}

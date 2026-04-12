@@ -1,10 +1,12 @@
 package extract
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/ledongthuc/pdf"
@@ -44,7 +46,9 @@ func readHeadPDFToText(path string, maxRunes int) string {
 	}
 
 	// -l 1: first page only, "--": end of flags (C1 security fix), "-": stdout
-	out, err := exec.Command(pdftotext, "-l", "1", "--", path, "-").Output()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, pdftotext, "-l", "1", "--", path, "-").Output()
 	if err != nil {
 		return ""
 	}

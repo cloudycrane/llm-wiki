@@ -72,14 +72,22 @@ func Diff(projectDir string, cfg *config.Config, mf *manifest.Manifest) (*DiffRe
 				return nil
 			}
 
-			var contentHead string
+			var detectedType string
 			if len(cfg.TypeSignals) > 0 {
-				contentHead = extract.ReadHead(path, extract.DefaultHeadRunes)
+				// Reuse cached type from manifest if file is unchanged
+				if existing, ok := mf.Sources[relPath]; ok && existing.Hash == hash && existing.Type != "" {
+					detectedType = existing.Type
+				} else {
+					contentHead := extract.ReadHead(path, extract.DefaultHeadRunes)
+					detectedType = extract.DetectSourceTypeWithSignals(path, contentHead, convertSignals(cfg.TypeSignals))
+				}
+			} else {
+				detectedType = extract.DetectSourceType(path)
 			}
 			current[relPath] = SourceInfo{
 				Path: relPath,
 				Hash: hash,
-				Type: extract.DetectSourceTypeWithSignals(path, contentHead, convertSignals(cfg.TypeSignals)),
+				Type: detectedType,
 				Size: info.Size(),
 			}
 			return nil
